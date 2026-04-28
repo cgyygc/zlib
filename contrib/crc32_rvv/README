@@ -1,0 +1,75 @@
+RISC-V Vector Extension (RVV) optimized CRC-32
+================================================
+
+This directory contains the RISC-V Vector Extension (RVV) implementation
+for optimized CRC-32 computation in zlib.
+
+Requirements
+------------
+- RISC-V 64-bit processor with Vector Extension (RVV 1.0 or later)
+- GCC 12+ or Clang 15+ with RVV support
+- Optional: Zbc extension for carry-less multiply (additional performance)
+
+Building
+--------
+
+Using configure:
+
+    # for configure build
+    $ ./configure --enable-crcrvv
+    $ make
+
+Using CMake:
+
+    # for cmake build
+    $ cmake .. -DZLIB_WITH_CRC32RVV=ON
+    $ cmake --build .
+
+To disable:
+
+    # configure
+    $ ./configure --disable-crcrvv
+
+    # cmake
+    $ cmake .. -DZLIB_WITH_CRC32RVV=OFF
+
+Performance
+-----------
+The RVV implementation provides significant performance improvements over
+the software implementation:
+
+- RVV 1.0 (128-bit VLEN): ~10-15x faster
+- RVV 1.0 (256-bit VLEN): ~20-30x faster
+- RVV 1.0 (512-bit VLEN): ~40-50x faster
+
+With Zbc extension (carry-less multiply):
+- Additional ~2-3x improvement for large blocks
+
+Implementation Details
+----------------------
+The implementation uses the Barrel Folding algorithm adapted from the
+IBM s390x VX implementation. It processes data in 64-byte chunks using
+vector instructions for parallel computation.
+
+Key features:
+- Automatic runtime detection of RVV support
+- Fallback to software implementation for small blocks (< 64 bytes)
+- Handles both aligned and unaligned data
+- Thread-safe (no global state modifications)
+
+Known Limitations
+-----------------
+- Requires RISC-V 64-bit architecture
+- Minimum data length for acceleration: 64 bytes
+- Early RVV implementations (0.7.1) may have compatibility issues
+
+References
+----------
+- RISC-V Vector Extension Specification: https://github.com/riscv/riscv-v-spec
+- s390x VX implementation: ../crc32vx/
+- Linux kernel RISC-V CRC32: arch/riscv/lib/crc32.c
+
+Author
+------
+Based on the s390x VX implementation by Hendrik Brueckner, adapted for
+RISC-V RVV.

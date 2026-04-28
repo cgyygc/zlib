@@ -35,6 +35,9 @@
 #ifdef HAVE_S390X_VX
 #  include "contrib/crc32vx/crc32_vx_hooks.h"
 #endif
+#ifdef HAVE_RISCV_RVV
+#  include "contrib/crc32_rvv/crc32_rvv_hooks.h"
+#endif
 
  /*
   A CRC of a message is computed on N braids of words in the message, where
@@ -944,9 +947,12 @@ uLong ZEXPORT crc32_z(uLong crc, const unsigned char FAR *buf, z_size_t len) {
 
 /* ========================================================================= */
 uLong ZEXPORT crc32(uLong crc, const unsigned char FAR *buf, uInt len) {
-    #ifdef HAVE_S390X_VX
+#ifdef HAVE_S390X_VX
     return crc32_z_hook(crc, buf, len);
-    #endif
+#endif
+#if defined(HAVE_RISCV_RVV) && defined(__riscv_vector)
+    return crc32_z_hook(crc, buf, len);
+#endif
     return crc32_z(crc, buf, len);
 }
 

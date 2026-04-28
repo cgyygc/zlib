@@ -96,6 +96,7 @@ undefined=0
 insecure=0
 unknown=0
 enable_crcvx=1
+enable_crcrvv=1
 old_cc="$CC"
 old_cflags="$CFLAGS"
 OBJC='$(OBJZ) $(OBJG)'
@@ -123,7 +124,7 @@ case "$1" in
       echo '  configure [--const] [--zprefix] [--prefix=PREFIX]  [--eprefix=EXPREFIX]' | tee -a configure.log
       echo '    [--insecure] [--static] [--64] [--libdir=LIBDIR] [--sharedlibdir=LIBDIR]' | tee -a configure.log
       echo '    [--includedir=INCLUDEDIR] [--mandir=MANDIR]' | tee -a configure.log
-      echo '    [--archs="-arch i386 -arch x86_64"] [--disable-crcvx]' | tee -a configure.log
+      echo '    [--archs="-arch i386 -arch x86_64"] [--disable-crcvx] [--disable-crcrvv]' | tee -a configure.log
         exit 0 ;;
     -p*=* | --prefix=*) prefix=`echo $1 | sed 's/[^=]*=//'`; shift ;;
     -e*=* | --eprefix=*) exec_prefix=`echo $1 | sed 's/[^=]*=//'`; shift ;;
@@ -158,6 +159,8 @@ case "$1" in
     --undefined) undefined=1; shift ;;
     --insecure) insecure=1; shift ;;
     --disable-crcvx) enable_crcvx=0; shift ;;
+    --enable-crcrvv) enable_crcrvv=1; shift ;;
+    --disable-crcrvv) enable_crcrvv=0; shift ;;
     *) unknown=1; echo "unknown option ignored: $1" | tee -a configure.log; shift;;
     esac
 done
@@ -979,6 +982,70 @@ EOF
     fi
 fi
 
+# check for RISC-V build
+HAVE_RISCV=0
+cat > $test.c << EOF
+#if !defined(__riscv) && !defined(__riscv__)
+    #error
+#endif
+EOF
+if try $CC -c $CFLAGS $test.c; then
+    echo "Checking for RISC-V build ... Yes." | tee -a configure.log
+    HAVE_RISCV=1
+else
+    echo "Checking for RISC-V build ... No." | tee -a configure.log
+fi
+
+# check for RISC-V RVV (Vector Extension)
+HAVE_RISCV_RVV=0
+if test $HAVE_RISCV -eq 1 && test $enable_crcrvv -eq 1; then
+    # preset the compiler specific flags
+    # Note: -march flag may need adjustment based on the target RISC-V processor
+    if test $clang -eq 1; then
+        RVVFLAG="-march=rv64gcv"
+    else
+        # GCC uses similar flags
+        RVVFLAG="-march=rv64gcv"
+    fi
+
+    cat > $test.c <<EOF
+#if !defined(__riscv) && !defined(__riscv__)
+#error
+#endif
+#include <riscv_vector.h>
+int main(void) {
+    vuint8m1_t a = __riscv_vle8_v_u8m1((const uint8_t*)0, 1);
+    return 0;
+}
+EOF
+
+    # cflags already contains a valid march
+    if try $CC -c $CFLAGS $RVVFLAG $test.c; then
+        echo "Checking for RISC-V RVV vector extension ... Yes." | tee -a configure.log
+        HAVE_RISCV_RVV=1
+    # try with Zbc extension (carry-less multiply)
+    elif try $CC -c $CFLAGS "-march=rv64gcv_zbc" $test.c; then
+        echo "Checking for RISC-V RVV vector extension with Zbc ... Yes." | tee -a configure.log
+        HAVE_RISCV_RVV=1
+        RVVFLAG="-march=rv64gcv_zbc"
+    # else we don't have RVV support
+    else
+        echo "Checking for RISC-V RVV vector extension ... No." | tee -a configure.log
+        RVVFLAG=""
+    fi
+
+    # prepare compiling for RISC-V with RVV
+    if test $HAVE_RISCV_RVV -eq 1; then
+        CFLAGS="$CFLAGS -DHAVE_RISCV_RVV"
+        SFLAGS="$SFLAGS -DHAVE_RISCV_RVV"
+        OBJC="$OBJC crc32_rvv.o"
+        PIC_OBJC="$PIC_OBJC crc32_rvv.lo"
+    else
+        # target has no RVV extension
+        RVVFLAG=""
+    fi
+fi
+
 # show the results in the log
 echo >> configure.log
 echo ALL = $ALL >> configure.log
@@ -1013,6 +1080,9 @@ echo uname = $uname >> configure.log
 echo HAVE_S390X = $HAVE_S390X >> configure.log
 echo HAVE_S390X_VX = $HAVE_S390X_VX >> configure.log
 echo VGFMAFLAG = $VGFMAFLAG >> configure.log
+echo HAVE_RISCV = $HAVE_RISCV >> configure.log
+echo HAVE_RISCV_RVV = $HAVE_RISCV_RVV >> configure.log
+echo RVVFLAG = $RVVFLAG >> configure.log
 
 # update Makefile with the configure results
 sed < ${SRCDIR}Makefile.in "
@@ -1025,6 +1095,7 @@ sed < ${SRCDIR}Makefile.in "
 /^LDSHARED *=/s#=.*#=$LDSHARED#
 /^CPP *=/s#=.*#=$CPP#
 /^VGFMAFLAG *=/s#=.*#=$VGFMAFLAG#
+/^RVVFLAG *=/s#=.*#=$RVVFLAG#
 /^STATICLIB *=/s#=.*#=$STATICLIB#
 /^SHAREDLIB *=/s#=.*#=$SHAREDLIB#
 /^SHAREDLIBV *=/s#=.*#=$SHAREDLIBV#
